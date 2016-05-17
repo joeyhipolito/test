@@ -15,9 +15,13 @@ class PersonController {
 		echo json_encode($this->model->findOne($id));
 	}
 	public function post() {
-		$fname   = $_POST['first_name'];
-		$lname   = $_POST['last_name'];
-		$contact = $_POST['contact'];
+		
+		$json = file_get_contents('php://input');
+		$obj = json_decode($json);
+		
+		$fname   = $obj->first_name;
+		$lname   = $obj->last_name;
+		$contact = $obj->contact;
 		
 		$person  = array(
 			'first_name' => $fname,
@@ -44,6 +48,6 @@ class PersonController {
 		echo $this->model->update($id, $person);
 	}
 	public function delete($id) {
-		echo $this->model->delete($id);
+		echo $this->model->delete($id, $person);
 	}
 }
