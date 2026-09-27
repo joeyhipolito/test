@@ -1,0 +1,1002 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>K24 Jeepney Teardown</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --bg: #ece7e3;
+    --canvas-bg: #d9d3ce;
+    --surface: rgba(250, 247, 244, 0.88);
+    --ink: #1d1719;
+    --muted: #6e6266;
+    --line: #d5cac6;
+    --accent: #b3202a;
+    --accent-ink: #ffffff;
+    --boron: #d7263d;
+    --ehss: #ef8a2e;
+    --hss: #dcbd35;
+    --mild: #7c8086;
+    --stainless: #b9bdba;
+    --alu: #9fb3c2;
+    --font-display: 'Big Shoulders Display', 'Arial Narrow', Impact, sans-serif;
+    --font-body: 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
+    --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+    --gutter: clamp(16px, 4vw, 48px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #171416;
+      --canvas-bg: #141214;
+      --surface: rgba(30, 25, 27, 0.84);
+      --ink: #f1ebe6;
+      --muted: #a89b96;
+      --line: #3b3235;
+      --accent: #e34c55;
+      --accent-ink: #1a0d0f;
+      --stainless: #cfd3d0;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #171416;
+    --canvas-bg: #141214;
+    --surface: rgba(30, 25, 27, 0.84);
+    --ink: #f1ebe6;
+    --muted: #a89b96;
+    --line: #3b3235;
+    --accent: #e34c55;
+    --accent-ink: #1a0d0f;
+    --stainless: #cfd3d0;
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.5;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #gl {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: pan-y;
+    cursor: grab;
+    z-index: 0;
+    background: var(--canvas-bg);
+  }
+  #gl.dragging { cursor: grabbing; }
+  #gl.free { touch-action: none; }
+
+  #fallback {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    padding: var(--gutter);
+    text-align: center;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  #tags { position: fixed; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
+  .tag {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform: translate(-50%, calc(-100% - 10px));
+    font: 500 11px/1.2 var(--font-mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 5px 8px;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.35s ease;
+    will-change: transform;
+  }
+  .tag::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: -7px;
+    width: 6px;
+    height: 6px;
+    margin-left: -3px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .tag.on { opacity: 1; }
+
+  .brand {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 4;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+    padding: calc(12px + env(safe-area-inset-top, 0px)) var(--gutter) 10px;
+    pointer-events: none;
+  }
+  .brand .name {
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: 22px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  .brand .sub {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .legend {
+    position: fixed;
+    right: var(--gutter);
+    top: calc(64px + env(safe-area-inset-top, 0px));
+    z-index: 3;
+    display: none;
+    width: 200px;
+    background: var(--surface);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 12px 14px;
+  }
+  @media (min-width: 900px) { .legend { display: block; } }
+  .legend h3, .legend-inline h3 {
+    margin: 0 0 8px;
+    font: 500 11px/1 var(--font-mono);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .swatches { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+  .swatches li {
+    display: grid;
+    grid-template-columns: 12px 1fr;
+    gap: 10px;
+    align-items: center;
+    font: 400 12px/1.3 var(--font-body);
+  }
+  .swatches i { display: block; width: 12px; height: 12px; border-radius: 2px; }
+  .legend-inline { margin-top: 14px; }
+  @media (min-width: 900px) { .legend-inline { display: none; } }
+
+  .track { position: relative; z-index: 2; pointer-events: none; padding-inline: var(--gutter); }
+  .stage {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    padding-block: 72px 120px;
+  }
+  .card {
+    pointer-events: auto;
+    width: 100%;
+    max-width: 380px;
+    background: var(--surface);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 20px 22px 22px;
+    transition: border-color 0.3s ease;
+  }
+  .card.on { border-color: var(--accent); }
+  .stage[data-stage="0"] .card { max-width: 480px; }
+  .eyebrow {
+    margin: 0;
+    font: 500 11px/1.3 var(--font-mono);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    margin: 8px 0 12px;
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: clamp(56px, 9vw, 96px);
+    line-height: 0.88;
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+    text-wrap: balance;
+  }
+  h2 {
+    margin: 6px 0 10px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(36px, 5vw, 54px);
+    line-height: 0.95;
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+    text-wrap: balance;
+  }
+  .card p { margin: 0; }
+  .card p + p { margin-top: 10px; }
+  .lead { font-size: 16px; }
+  .spec {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 14px;
+    margin: 16px 0 0;
+    font-size: 13px;
+  }
+  .spec dt {
+    margin: 0;
+    padding-top: 2px;
+    font: 500 11px/1.3 var(--font-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .spec dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .hint {
+    margin-top: 16px;
+    font: 500 11px/1.4 var(--font-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .rail {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px var(--gutter) calc(8px + env(safe-area-inset-bottom, 0px));
+    background: var(--surface);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--line);
+  }
+  .progress {
+    position: absolute;
+    left: 0;
+    top: -1px;
+    height: 2px;
+    width: 100%;
+    background: var(--accent);
+    transform-origin: left center;
+    transform: scaleX(0);
+  }
+  .stages {
+    display: flex;
+    gap: 4px;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .stages::-webkit-scrollbar { display: none; }
+  .controls { display: flex; gap: 4px; margin-left: auto; flex: 0 0 auto; }
+  button {
+    font: 500 12px/1 var(--font-mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink);
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 8px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button:hover { border-color: var(--ink); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .stages button[aria-current="true"] {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-color: var(--accent);
+  }
+  .controls button[aria-pressed="true"] {
+    background: var(--ink);
+    color: var(--bg);
+    border-color: var(--ink);
+  }
+  #orbitBtn { display: none; }
+  @media (pointer: coarse) { #orbitBtn { display: inline-block; } }
+
+  @media (max-width: 700px) {
+    .stage { align-items: flex-end; padding-bottom: 150px; }
+    .card { max-width: 100%; padding: 16px 18px 18px; }
+    .stage[data-stage="0"] .card { max-width: 100%; }
+    .brand .sub { display: none; }
+    .tag:nth-child(n+5) { display: none; }
+    button { padding: 8px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tag, .card { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="gl" aria-label="Interactive 3D model of the K24 owner-type jeepney. Drag to orbit, scroll to take it apart."></canvas>
+<div id="fallback" hidden>The 3D library did not load. Check the connection and reload.</div>
+<div id="tags" aria-hidden="true"></div>
+
+<header class="brand">
+  <div class="name">K24 Owner-Type</div>
+  <div class="sub">Stainless skin, Volvo P2 cell, Honda K24</div>
+</header>
+
+<aside class="legend" aria-label="Materials">
+  <h3>Steel grades and skin</h3>
+  <ul class="swatches">
+    <li><i style="background: var(--boron)"></i>Boron steel, UHSS</li>
+    <li><i style="background: var(--ehss)"></i>Extra-high-strength, EHSS</li>
+    <li><i style="background: var(--hss)"></i>High-strength, HSS</li>
+    <li><i style="background: var(--mild)"></i>Mild steel</li>
+    <li><i style="background: var(--stainless)"></i>304 stainless skin</li>
+    <li><i style="background: var(--alu)"></i>Aluminium</li>
+  </ul>
+</aside>
+
+<main class="track">
+  <section class="stage" data-stage="0">
+    <div class="card">
+      <p class="eyebrow">Concept study · Owner-type jeepney</p>
+      <h1>K24<br>Owner‑Type</h1>
+      <p class="lead">A stainless owner-type body on the safety cell of a first-generation Volvo XC90, with a Honda K24 mounted the way Honda mounts it.</p>
+      <dl class="spec">
+        <dt>Engine</dt><dd>Honda K24A2, 2.4 L DOHC i-VTEC, six-speed manual</dd>
+        <dt>Cell</dt><dd>Volvo XC90 (P2) unibody, boron steel pillars and rails</dd>
+        <dt>Wheelbase</dt><dd>2.6 m</dd>
+        <dt>Skin</dt><dd>Hand-formed 304 stainless, crimson roof</dd>
+      </dl>
+      <p class="hint">Scroll to take it apart. Drag to orbit.</p>
+    </div>
+  </section>
+
+  <section class="stage" data-stage="1">
+    <div class="card">
+      <p class="eyebrow">Stage 1 of 5 · Skin</p>
+      <h2>Stainless skin</h2>
+      <p>Mirror-polished 304 panels hand-formed over the cell and bolted to it, the way a Sarao body hangs on a frame. Chrome bumper and overriders, slotted grille, sun-visor eyebrow, three air horns, rear step and a swing-out spare.</p>
+    </div>
+  </section>
+
+  <section class="stage" data-stage="2">
+    <div class="card">
+      <p class="eyebrow">Stage 2 of 5 · Cabin</p>
+      <h2>Cabin</h2>
+      <p>Two forward-facing benches behind bucket seats. Every seat gets a three-point belt on anchors welded to the cell. The dash beam and the driver airbag come across from the donor.</p>
+    </div>
+  </section>
+
+  <section class="stage" data-stage="3">
+    <div class="card">
+      <p class="eyebrow">Stage 3 of 5 · Powertrain</p>
+      <h2>Honda K24</h2>
+      <p>A 2.4-litre DOHC i-VTEC inline-four, transverse on the donor's front subframe with a six-speed manual. 4-2-1 header, aluminium radiator, standalone ECU on the firewall. The fuel tank sits inside the cell ahead of the rear axle.</p>
+    </div>
+  </section>
+
+  <section class="stage" data-stage="4">
+    <div class="card">
+      <p class="eyebrow">Stage 4 of 5 · Running gear</p>
+      <h2>Running gear</h2>
+      <p>MacPherson struts and aluminium lower arms on a bolt-in front subframe. Multi-link rear on its own subframe. Vented discs and ABS at all four corners, all carried over from the donor. Drag the view under the floor to see it.</p>
+    </div>
+  </section>
+
+  <section class="stage" data-stage="5">
+    <div class="card">
+      <p class="eyebrow">Stage 5 of 5 · Safety cell</p>
+      <h2>Boron cell</h2>
+      <p>What the skin hides. The donor's zoned body: boron steel pillars, roof rails and sills, extra-high-strength bows and crash boxes, high-strength rails, mild steel where it should crumple. This is why a cheap donor can still be a safe one.</p>
+      <div class="legend-inline">
+        <h3>Steel grades</h3>
+        <ul class="swatches">
+          <li><i style="background: var(--boron)"></i>Boron steel, UHSS</li>
+          <li><i style="background: var(--ehss)"></i>Extra-high-strength, EHSS</li>
+          <li><i style="background: var(--hss)"></i>High-strength, HSS</li>
+          <li><i style="background: var(--mild)"></i>Mild steel</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<nav class="rail" aria-label="Stages and view controls">
+  <div class="progress" id="progress"></div>
+  <div class="stages" id="stages">
+    <button type="button" data-go="0" aria-current="true">Assembled</button>
+    <button type="button" data-go="1">Skin</button>
+    <button type="button" data-go="2">Cabin</button>
+    <button type="button" data-go="3">K24</button>
+    <button type="button" data-go="4">Running gear</button>
+    <button type="button" data-go="5">Cell</button>
+  </div>
+  <div class="controls">
+    <button type="button" id="orbitBtn" aria-pressed="false" title="One-finger drag orbits in every direction">Orbit</button>
+    <button type="button" id="spinBtn" aria-pressed="true" title="Auto-rotate when idle">Spin</button>
+    <button type="button" id="zoomOut" aria-label="Zoom out">−</button>
+    <button type="button" id="zoomIn" aria-label="Zoom in">+</button>
+    <button type="button" id="resetBtn">Reset</button>
+  </div>
+</nav>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+  // Fallback: if the primary CDN was blocked, try a second one before giving up.
+  (function () {
+    if (window.THREE) return;
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js';
+    s.onload = function () { if (window.__k24boot) window.__k24boot(); };
+    s.onerror = function () { document.getElementById('fallback').hidden = false; };
+    document.head.appendChild(s);
+  })();
+</script>
+<script>
+(function () {
+  'use strict';
+
+  var STAGES = 5;                       // explode stages; sections = STAGES + 1
+  var STAGE_INDEX = { body: 0, interior: 1, power: 2, gear: 3, cell: 4 };
+  var SECTION_PHI = [1.15, 1.05, 0.95, 1.0, 1.95, 0.8];   // camera polar angle per section (radians from top)
+  var SECTION_R = [1.0, 1.15, 1.15, 1.2, 1.25, 1.2];      // camera distance multiplier per section
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function boot() {
+    var T = window.THREE;
+    var canvas = document.getElementById('gl');
+    var tagsEl = document.getElementById('tags');
+    var progressEl = document.getElementById('progress');
+    var stageBtns = Array.prototype.slice.call(document.querySelectorAll('#stages button'));
+    var cards = Array.prototype.slice.call(document.querySelectorAll('.card'));
+
+    // ---------- renderer, scene, camera ----------
+    var renderer = new T.WebGLRenderer({ canvas: canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputEncoding = T.sRGBEncoding;
+    renderer.toneMapping = T.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = T.PCFSoftShadowMap;
+
+    var scene = new T.Scene();
+    var camera = new T.PerspectiveCamera(36, 1, 0.1, 80);
+    var target = new T.Vector3(0, 0.9, 0);
+
+    var hemi = new T.HemisphereLight(0xffffff, 0x2a2426, 0.35);
+    scene.add(hemi);
+    var key = new T.DirectionalLight(0xfff4e8, 1.3);
+    key.position.set(4.5, 8, 3);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.camera.left = -6; key.shadow.camera.right = 6;
+    key.shadow.camera.top = 6; key.shadow.camera.bottom = -6;
+    key.shadow.camera.near = 1; key.shadow.camera.far = 30;
+    key.shadow.bias = -0.0008;
+    key.shadow.radius = 4;
+    scene.add(key);
+    var rimCool = new T.DirectionalLight(0xbcd3ff, 0.55);
+    rimCool.position.set(-6, 3, -4);
+    scene.add(rimCool);
+    var rimWarm = new T.DirectionalLight(0xffd2a8, 0.45);
+    rimWarm.position.set(6, 2.5, -5);
+    scene.add(rimWarm);
+
+    var groundMat = new T.ShadowMaterial({ opacity: 0.28 });
+    var ground = new T.Mesh(new T.PlaneGeometry(40, 40), groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // ---------- environment map (procedural studio, no external textures) ----------
+    var pmrem = new T.PMREMGenerator(renderer);
+    var envTex = null;
+    function makeEnv(dark) {
+      var es = new T.Scene();
+      var skyMat = new T.MeshBasicMaterial({ side: T.BackSide });
+      skyMat.color.setRGB(dark ? 0.11 : 0.5, dark ? 0.1 : 0.48, dark ? 0.11 : 0.47);
+      es.add(new T.Mesh(new T.SphereGeometry(30, 16, 12), skyMat));
+      function panel(w, h, x, y, z, r, g, b) {
+        var m = new T.MeshBasicMaterial();
+        m.color.setRGB(r, g, b);
+        var p = new T.Mesh(new T.PlaneGeometry(w, h), m);
+        p.position.set(x, y, z);
+        p.lookAt(0, 0, 0);
+        es.add(p);
+      }
+      panel(14, 7, 0, 12, 1, 6, 6, 6);          // overhead softbox
+      panel(3, 16, -14, 4, 6, 1.4, 2.2, 4);     // cool rim, left
+      panel(3, 16, 14, 4, -6, 4, 2.6, 1.4);     // warm rim, right
+      panel(24, 1.6, 0, 1.2, -18, 3, 3, 3);     // horizon strip behind
+      panel(24, 1.6, 0, 1.2, 18, 1.2, 1.2, 1.2);
+      var tex = pmrem.fromScene(es, 0.03).texture;
+      skyMat.dispose();
+      return tex;
+    }
+
+    // ---------- materials ----------
+    function std(color, metal, rough, envI) {
+      var m = new T.MeshStandardMaterial({ color: color, metalness: metal, roughness: rough });
+      m.color.convertSRGBToLinear();
+      if (envI) m.envMapIntensity = envI;
+      return m;
+    }
+    var M = {
+      stainless: std(0xd9dbd8, 0.95, 0.2, 1.5),
+      chrome: std(0xf2f2f0, 1.0, 0.07, 1.7),
+      crimson: std(0x8b1a22, 0.5, 0.3),
+      vinyl: std(0x25201f, 0.1, 0.75),
+      vinylRed: std(0x7a1c22, 0.1, 0.7),
+      glass: new T.MeshStandardMaterial({ color: 0xc4dcea, metalness: 0.1, roughness: 0.05, transparent: true, opacity: 0.32, envMapIntensity: 1.5 }),
+      alu: std(0xbcc6cf, 0.85, 0.42),
+      aluCast: std(0x9aa3a8, 0.7, 0.62),
+      black: std(0x1c1c1e, 0.3, 0.6),
+      rubber: std(0x141414, 0.0, 0.95),
+      steel: std(0x8a8d90, 0.9, 0.42),
+      lens: new T.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff0cc, emissiveIntensity: 0.5, metalness: 0.2, roughness: 0.15 }),
+      boron: std(0xd7263d, 0.35, 0.45),
+      ehss: std(0xef8a2e, 0.35, 0.5),
+      hss: std(0xdcbd35, 0.35, 0.5),
+      mild: std(0x7c8086, 0.5, 0.6)
+    };
+    M.glass.color.convertSRGBToLinear();
+    M.lens.emissive.convertSRGBToLinear();
+    [M.boron, M.ehss, M.hss].forEach(function (m) { m.emissive = m.color.clone(); m.emissiveIntensity = 0; });
+
+    // ---------- geometry helpers ----------
+    function v3(a) { return new T.Vector3(a[0], a[1], a[2]); }
+    function mid(a, b) { return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]; }
+    function box(w, h, d, mat) { return new T.Mesh(new T.BoxGeometry(w, h, d), mat); }
+    function cyl(r, len, mat, axis, seg) {
+      var m = new T.Mesh(new T.CylinderGeometry(r, r, len, seg || 24), mat);
+      if (axis === 'x') m.rotation.z = Math.PI / 2;
+      else if (axis === 'z') m.rotation.x = Math.PI / 2;
+      return m;
+    }
+    function cone(r, len, mat) { return new T.Mesh(new T.ConeGeometry(r, len, 20), mat); }
+    // cylinder from point a to point b, positioned in the caller's frame
+    function tubeTo(a, b, r, mat) {
+      var A = v3(a), B = v3(b);
+      var len = A.distanceTo(B);
+      var m = new T.Mesh(new T.CylinderGeometry(r, r, len, 14), mat);
+      m.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), B.clone().sub(A).normalize());
+      m.position.copy(A).add(B).multiplyScalar(0.5);
+      return m;
+    }
+    function at(m, x, y, z) { m.position.set(x, y, z); return m; }
+    function grp() {
+      var g = new T.Group();
+      for (var i = 0; i < arguments.length; i++) g.add(arguments[i]);
+      return g;
+    }
+    class Helix extends T.Curve {
+      constructor(r, h, turns) { super(); this.r = r; this.h = h; this.turns = turns; }
+      getPoint(t, o) {
+        o = o || new T.Vector3();
+        var a = t * Math.PI * 2 * this.turns;
+        return o.set(Math.cos(a) * this.r, t * this.h - this.h / 2, Math.sin(a) * this.r);
+      }
+    }
+    function spring(r, h, turns, mat) {
+      return new T.Mesh(new T.TubeGeometry(new Helix(r, h, turns), 96, 0.011, 8, false), mat);
+    }
+
+    // ---------- part registry ----------
+    var car = new T.Group();
+    scene.add(car);
+    var parts = [];
+    var byName = {};
+    function add(name, group, obj, home, ex, delay) {
+      obj.position.set(home[0], home[1], home[2]);
+      obj.traverse(function (o) { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      car.add(obj);
+      var p = { name: name, group: group, obj: obj, home: v3(home), ex: v3(ex), delay: delay || 0 };
+      parts.push(p);
+      byName[name] = p;
+      return p;
+    }
+    var S = [-1, 1]; // left, right
+
+    // ---------- the safety cell (Volvo P2, zoned steel) ----------
+    add('floor', 'cell', box(3.1, 0.04, 1.5, M.mild), [-0.45, 0.45, 0], [0, -0.5, 0], 0.3);
+    [0.6, -0.4, -1.4].forEach(function (x, i) {
+      add('xmember' + i, 'cell', box(0.08, 0.06, 1.5, M.hss), [x, 0.49, 0], [0, -0.35, 0], 0.25 + i * 0.05);
+    });
+    S.forEach(function (s) {
+      add('sill' + s, 'cell', box(3.1, 0.1, 0.08, M.boron), [-0.45, 0.5, s * 0.79], [0, -0.15, s * 0.5], 0.1);
+      var a = [1.1, 0.95, s * 0.78], b = [0.95, 1.9, s * 0.78];
+      add('apillar' + s, 'cell', tubeTo([0, 0, 0], [b[0] - a[0], b[1] - a[1], 0], 0.035, M.boron), mid(a, b), [0.3, 0.3, s * 0.4], 0);
+      add('bpillar' + s, 'cell', cyl(0.04, 1.4, M.boron, 'y'), [-0.3, 1.2, s * 0.78], [0, 0.35, s * 0.45], 0.05);
+      add('cpillar' + s, 'cell', cyl(0.035, 1.4, M.ehss, 'y'), [-2.0, 1.2, s * 0.78], [-0.3, 0.3, s * 0.4], 0.05);
+      add('roofrail' + s, 'cell', cyl(0.035, 2.95, M.boron, 'x'), [-0.525, 1.9, s * 0.78], [0, 0.6, s * 0.5], 0.15);
+      add('frail' + s, 'cell', box(0.95, 0.1, 0.08, M.hss), [1.6, 0.5, s * 0.5], [0.4, -0.2, s * 0.3], 0.1);
+      add('fcrash' + s, 'cell', box(0.14, 0.1, 0.1, M.ehss), [2.12, 0.5, s * 0.5], [0.8, -0.2, s * 0.3], 0.15);
+      add('rrail' + s, 'cell', box(0.5, 0.1, 0.08, M.hss), [-1.85, 0.4, s * 0.5], [-0.4, -0.2, s * 0.3], 0.1);
+      add('rcrash' + s, 'cell', box(0.12, 0.1, 0.1, M.ehss), [-2.16, 0.4, s * 0.5], [-0.8, -0.2, s * 0.3], 0.15);
+    });
+    [0.95, -0.3, -2.0].forEach(function (x, i) {
+      add('bow' + i, 'cell', cyl(0.03, 1.6, M.ehss, 'z'), [x, 1.9, 0], [0, 0.75, 0], 0.2 + i * 0.04);
+    });
+    add('firewall', 'cell', box(0.05, 0.5, 1.5, M.mild), [1.1, 0.72, 0], [0.3, 0.2, 0], 0.2);
+    add('dashbeam', 'cell', cyl(0.03, 1.55, M.ehss, 'z'), [1.0, 1.0, 0], [0.3, 0.5, 0], 0.2);
+    add('fbeam', 'cell', box(0.06, 0.12, 1.4, M.boron), [2.22, 0.5, 0], [1.1, -0.2, 0], 0.2);
+    add('rbeam', 'cell', box(0.06, 0.12, 1.4, M.boron), [-2.25, 0.4, 0], [-1.1, -0.2, 0], 0.2);
+
+    // ---------- stainless skin and brightwork ----------
+    add('roof', 'body', box(3.05, 0.05, 1.7, M.crimson), [-0.525, 1.94, 0], [0, 1.4, 0], 0);
+    var visor = box(0.4, 0.03, 1.75, M.chrome); visor.rotation.z = -0.12;
+    add('visor', 'body', visor, [1.18, 1.93, 0], [0.4, 1.3, 0], 0.05);
+    var rack = grp(
+      at(cyl(0.015, 2.4, M.chrome, 'x'), 0, 0, -0.6), at(cyl(0.015, 2.4, M.chrome, 'x'), 0, 0, 0.6),
+      at(cyl(0.012, 1.2, M.chrome, 'z'), -1.0, 0, 0), at(cyl(0.012, 1.2, M.chrome, 'z'), 0, 0, 0),
+      at(cyl(0.012, 1.2, M.chrome, 'z'), 1.0, 0, 0)
+    );
+    add('rack', 'body', rack, [-0.6, 2.03, 0], [0, 1.75, 0], 0.02);
+    var horns = grp();
+    [-0.3, 0, 0.3].forEach(function (z) {
+      var c = cone(0.05, 0.24, M.chrome); c.rotation.z = -Math.PI / 2; c.position.set(0, 0, z); horns.add(c);
+      horns.add(at(cyl(0.01, 0.06, M.chrome, 'y'), -0.06, -0.04, z));
+    });
+    add('horns', 'body', horns, [0.4, 2.08, 0], [0.3, 1.8, 0], 0.06);
+    var ws = box(0.03, 0.9, 1.5, M.glass); ws.rotation.z = 0.16;
+    add('windshield', 'body', ws, [1.03, 1.42, 0], [0.5, 0.9, 0], 0.08);
+    add('hood', 'body', box(0.96, 0.04, 1.3, M.stainless), [1.6, 0.99, 0], [0.6, 1.0, 0], 0.1);
+    var orn = grp();
+    [-0.3, 0, 0.3].forEach(function (z) {
+      orn.add(at(cyl(0.008, 0.05, M.chrome, 'y'), 0, 0.02, z));
+      orn.add(at(new T.Mesh(new T.SphereGeometry(0.035, 16, 12), M.chrome), 0, 0.07, z));
+    });
+    add('ornaments', 'body', orn, [1.98, 1.01, 0], [0.8, 1.15, 0], 0.12);
+    S.forEach(function (s) {
+      add('ffender' + s, 'body', box(0.98, 0.3, 0.26, M.stainless), [1.6, 0.81, s * 0.82], [0.3, 0.55, s * 0.9], 0.15);
+      add('rfender' + s, 'body', box(0.9, 0.28, 0.24, M.stainless), [-1.3, 0.85, s * 0.83], [-0.3, 0.5, s * 0.9], 0.18);
+      add('belt' + s, 'body', box(3.1, 0.24, 0.03, M.stainless), [-0.45, 0.86, s * 0.83], [0, 0.3, s * 1.3], 0.2);
+      add('rocker' + s, 'body', box(1.7, 0.27, 0.03, M.stainless), [0, 0.605, s * 0.83], [0, 0.05, s * 1.35], 0.24);
+      add('sillrail' + s, 'body', cyl(0.03, 1.7, M.stainless, 'x'), [0, 0.5, s * 0.88], [0, -0.1, s * 1.25], 0.26);
+      var mirror = grp(
+        tubeTo([0, 0, 0], [0, 0.25, s * 0.24], 0.012, M.chrome),
+        at(box(0.03, 0.16, 0.12, M.chrome), 0, 0.28, s * 0.27)
+      );
+      add('mirror' + s, 'body', mirror, [1.05, 1.15, s * 0.86], [0.3, 0.8, s * 0.9], 0.1);
+      var lamp = grp(at(cyl(0.125, 0.05, M.chrome, 'x'), 0, 0, 0), at(cyl(0.1, 0.06, M.lens, 'x'), 0.02, 0, 0));
+      add('headlight' + s, 'body', lamp, [2.1, 0.76, s * 0.58], [1.2, 0.4, s * 0.25], 0.14);
+      add('overrider' + s, 'body', box(0.1, 0.3, 0.08, M.chrome), [2.36, 0.52, s * 0.45], [1.7, 0.1, s * 0.15], 0.2);
+    });
+    var grille = grp(box(0.05, 0.45, 0.95, M.black));
+    for (var gi = -3; gi <= 3; gi++) grille.add(at(box(0.02, 0.4, 0.03, M.chrome), 0.03, 0, gi * 0.13));
+    add('grille', 'body', grille, [2.08, 0.72, 0], [1.0, 0.35, 0], 0.16);
+    add('bumper', 'body', box(0.08, 0.12, 1.75, M.chrome), [2.32, 0.45, 0], [1.5, 0.0, 0], 0.18);
+    add('rearpanel', 'body', box(0.03, 0.5, 1.66, M.stainless), [-2.05, 0.72, 0], [-1.0, 0.3, 0], 0.2);
+    add('rearstep', 'body', box(0.18, 0.05, 1.3, M.chrome), [-2.3, 0.4, 0], [-1.6, -0.2, 0], 0.22);
+    var spare = grp(
+      at(cyl(0.34, 0.2, M.rubber, 'x', 40), 0, 0, 0), at(cyl(0.22, 0.21, M.alu, 'x'), 0, 0, 0),
+      at(box(0.04, 0.85, 0.06, M.chrome), 0.1, -0.3, 0)
+    );
+    add('spare', 'body', spare, [-2.32, 1.0, 0], [-2.0, 0.5, 0], 0.25);
+
+    // ---------- cabin ----------
+    add('dash', 'interior', box(0.35, 0.22, 1.45, M.vinyl), [0.88, 1.02, 0], [0.2, 1.2, 0], 0);
+    var wheel = new T.Mesh(new T.TorusGeometry(0.17, 0.02, 12, 36), M.vinylRed);
+    wheel.rotation.y = Math.PI / 2; wheel.rotateX(0.45);
+    var col = grp(wheel, tubeTo([0.25, -0.1, 0], [0.02, 0, 0], 0.02, M.black));
+    add('wheel', 'interior', col, [0.6, 1.12, -0.42], [0.1, 1.4, -0.3], 0.05);
+    function seat(w, base, back) {
+      var b = box(0.12, 0.6, w, back); b.rotation.z = -0.15;
+      return grp(at(box(0.5, 0.12, w, base), 0, 0, 0), at(b, -0.25, 0.32, 0), at(box(0.08, 0.14, Math.min(w, 0.24), back), -0.31, 0.7, 0));
+    }
+    S.forEach(function (s) {
+      add('seat' + s, 'interior', seat(0.48, M.vinylRed, M.vinyl), [0.3, 0.68, s * 0.42], [0, 1.1, s * 0.35], 0.1);
+    });
+    function bench() {
+      var b = box(0.12, 0.55, 1.4, M.vinyl); b.rotation.z = -0.12;
+      return grp(at(box(0.5, 0.12, 1.4, M.vinylRed), 0, 0, 0), at(b, -0.25, 0.3, 0));
+    }
+    add('bench0', 'interior', bench(), [-0.6, 0.68, 0], [0, 1.0, 0], 0.2);
+    add('bench1', 'interior', bench(), [-1.5, 0.68, 0], [0, 1.05, 0], 0.3);
+
+    // ---------- Honda K24, transverse ----------
+    var engine = grp(
+      at(box(0.42, 0.42, 0.58, M.aluCast), 0, 0, 0),
+      at(box(0.32, 0.14, 0.58, M.alu), -0.03, 0.28, 0),
+      at(box(0.36, 0.12, 0.5, M.aluCast), 0, -0.27, 0),
+      at(cyl(0.07, 0.03, M.black, 'z'), 0, 0.02, 0.31),
+      at(cyl(0.05, 0.03, M.black, 'z'), 0.1, 0.2, 0.31),
+      at(cyl(0.06, 0.12, M.aluCast, 'z'), 0.12, -0.05, 0.36)
+    );
+    add('engine', 'power', engine, [1.55, 0.52, 0.06], [0.2, 1.3, 0], 0);
+    var cover = grp(at(box(0.3, 0.09, 0.56, M.black), 0, 0, 0), at(box(0.31, 0.015, 0.57, M.crimson), 0, 0.03, 0));
+    add('cover', 'power', cover, [1.52, 0.915, 0.06], [0.2, 1.75, 0], 0.05);
+    var intake = grp(at(cyl(0.07, 0.55, M.alu, 'z'), 0, 0, 0), at(cyl(0.04, 0.08, M.alu, 'x'), 0.1, 0, -0.2));
+    [-0.18, -0.06, 0.06, 0.18].forEach(function (z) { intake.add(tubeTo([0, 0, z], [-0.27, 0.1, z], 0.024, M.alu)); });
+    add('intake', 'power', intake, [1.85, 0.7, 0.06], [0.6, 1.5, 0], 0.1);
+    var air = grp(tubeTo([0, 0, 0], [0.05, 0.13, -0.4], 0.03, M.black), at(cyl(0.07, 0.14, M.black, 'z'), 0.05, 0.13, -0.48));
+    add('airfilter', 'power', air, [1.95, 0.7, -0.14], [0.8, 1.6, -0.6], 0.15);
+    var header = grp(at(cyl(0.045, 0.12, M.stainless, 'y'), -0.08, -0.28, 0));
+    [-0.18, -0.06, 0.06, 0.18].forEach(function (z) { header.add(tubeTo([0, 0.2, z], [-0.08, -0.22, 0], 0.02, M.stainless)); });
+    add('header', 'power', header, [1.3, 0.62, 0.06], [-0.2, 1.1, 0.5], 0.1);
+    add('gearbox', 'power', box(0.4, 0.34, 0.34, M.aluCast), [1.52, 0.5, -0.41], [0.2, 1.2, -0.85], 0.08);
+    add('shaftL', 'power', tubeTo([0, 0, 0], [-0.05, 0, -0.24], 0.02, M.steel), [1.35, 0.36, -0.42], [0.1, -0.5, -0.5], 0.2);
+    add('shaftR', 'power', tubeTo([0, 0, 0], [-0.05, 0, 0.86], 0.02, M.steel), [1.35, 0.36, -0.2], [0.1, -0.5, 0.5], 0.2);
+    var rad = grp(at(box(0.05, 0.45, 0.72, M.black), 0, 0, 0), at(box(0.06, 0.05, 0.74, M.alu), 0, 0.25, 0), at(cyl(0.15, 0.05, M.black, 'x'), -0.06, 0, 0.1));
+    add('radiator', 'power', rad, [2.0, 0.66, 0], [1.2, 0.9, 0], 0.18);
+    add('battery', 'power', box(0.22, 0.18, 0.14, M.black), [1.85, 0.78, 0.52], [0.7, 1.1, 0.6], 0.22);
+    add('ecu', 'power', box(0.16, 0.12, 0.04, M.alu), [1.14, 0.9, 0.5], [0.5, 1.4, 0.7], 0.25);
+    var exhaust = grp(
+      tubeTo([1.2, 0.3, 0.06], [0.6, 0.28, 0.3], 0.03, M.steel),
+      at(cyl(0.03, 2.0, M.steel, 'x'), -0.4, 0.28, 0.3),
+      at(box(0.55, 0.16, 0.24, M.stainless), -1.7, 0.3, 0.3),
+      at(cyl(0.03, 0.4, M.stainless, 'x'), -2.15, 0.28, 0.4)
+    );
+    add('exhaust', 'power', exhaust, [0, 0, 0], [0, -0.9, 0.6], 0.3);
+    add('tank', 'power', box(0.6, 0.2, 0.9, M.mild), [-0.65, 0.33, 0], [0, -1.0, 0], 0.3);
+
+    // ---------- running gear ----------
+    function wheelAssembly() {
+      return grp(at(cyl(0.36, 0.22, M.rubber, 'z', 44), 0, 0, 0), at(cyl(0.24, 0.23, M.alu, 'z', 32), 0, 0, 0), at(cyl(0.07, 0.245, M.chrome, 'z'), 0, 0, 0));
+    }
+    function subframe(lenX) {
+      return grp(
+        at(box(lenX, 0.06, 0.06, M.alu), 0, 0, -0.45), at(box(lenX, 0.06, 0.06, M.alu), 0, 0, 0.45),
+        at(box(0.06, 0.06, 0.96, M.alu), -lenX / 2 + 0.03, 0, 0), at(box(0.06, 0.06, 0.96, M.alu), lenX / 2 - 0.03, 0, 0)
+      );
+    }
+    [1.3, -1.3].forEach(function (x, xi) {
+      S.forEach(function (s) {
+        var id = (xi === 0 ? 'f' : 'r') + s;
+        add('tyre' + id, 'gear', wheelAssembly(), [x, 0.36, s * 0.78], [0, -0.45, s * 1.45], 0.25);
+        add('disc' + id, 'gear', cyl(0.16, 0.025, M.steel, 'z', 36), [x, 0.36, s * 0.6], [0, -0.4, s * 1.0], 0.2);
+        add('caliper' + id, 'gear', box(0.1, 0.08, 0.06, M.crimson), [x + 0.1, 0.46, s * 0.6], [0, -0.3, s * 0.95], 0.2);
+      });
+    });
+    S.forEach(function (s) {
+      var strut = grp(
+        at(cyl(0.03, 0.36, M.black, 'y'), 0, 0, 0), at(cyl(0.012, 0.2, M.chrome, 'y'), 0, 0.26, 0),
+        at(spring(0.07, 0.28, 5, M.steel), 0, 0.2, 0), at(cyl(0.08, 0.03, M.black, 'y'), 0, 0.36, 0)
+      );
+      add('strut' + s, 'gear', strut, [1.3, 0.58, s * 0.6], [0, -0.55, s * 0.6], 0.1);
+      add('larm' + s, 'gear', box(0.3, 0.03, 0.32, M.alu), [1.3, 0.3, s * 0.5], [0, -0.8, s * 0.6], 0.15);
+      add('trail' + s, 'gear', box(0.55, 0.04, 0.05, M.steel), [-1.05, 0.38, s * 0.62], [0, -0.7, s * 0.6], 0.15);
+      add('lowerlink' + s, 'gear', box(0.04, 0.03, 0.3, M.alu), [-1.3, 0.3, s * 0.5], [0, -0.6, s * 0.5], 0.18);
+      add('upperlink' + s, 'gear', box(0.04, 0.03, 0.28, M.alu), [-1.38, 0.5, s * 0.5], [0, -0.6, s * 0.5], 0.18);
+      add('rspring' + s, 'gear', spring(0.06, 0.24, 5, M.steel), [-1.35, 0.5, s * 0.55], [0, -0.35, s * 0.7], 0.12);
+      add('rdamper' + s, 'gear', tubeTo([0, 0, 0], [-0.1, 0.45, s * -0.06], 0.025, M.black), [-1.15, 0.35, s * 0.66], [0, -0.5, s * 0.8], 0.12);
+    });
+    add('fsub', 'gear', subframe(0.9), [1.5, 0.28, 0], [0.2, -1.15, 0], 0.05);
+    add('rsub', 'gear', subframe(0.7), [-1.3, 0.33, 0], [-0.2, -1.15, 0], 0.05);
+
+    // ---------- labels per section ----------
+    var LABELS = {
+      1: [['roof', 'Crimson roof'], ['hood', 'Stainless hood'], ['bumper', 'Chrome bumper'], ['visor', 'Sun-visor eyebrow'], ['horns', 'Air horns'], ['spare', 'Swing-out spare']],
+      2: [['seat-1', 'Bucket seat, 3-point belt'], ['bench0', 'Forward-facing bench'], ['dash', 'Dash on the donor beam'], ['wheel', 'Wood-rim wheel']],
+      3: [['engine', 'K24 2.4 L i-VTEC'], ['gearbox', 'Six-speed manual'], ['intake', 'Intake plenum'], ['header', '4-2-1 header'], ['radiator', 'Aluminium radiator'], ['tank', 'Tank ahead of rear axle']],
+      4: [['strut1', 'MacPherson strut'], ['fsub', 'Aluminium front subframe'], ['rsub', 'Multi-link rear subframe'], ['discf1', 'Vented disc, ABS'], ['tyrer-1', 'Alloy wheel']],
+      5: [['bpillar1', 'B-pillar, boron'], ['roofrail1', 'Roof rail, boron'], ['bow1', 'Roof bow, EHSS'], ['frail1', 'Front rail, HSS'], ['floor', 'Floor pan, mild steel'], ['fbeam', 'Bumper beam, boron']]
+    };
+    var tagEls = {};
+    Object.keys(LABELS).forEach(function (sec) {
+      LABELS[sec].forEach(function (pair) {
+        var el = document.createElement('div');
+        el.className = 'tag';
+        el.textContent = pair[1];
+        el.dataset.sec = sec;
+        tagsEl.appendChild(el);
+        tagEls[sec + ':' + pair[0]] = { el: el, part: byName[pair[0]] };
+      });
+    });
+
+    // ---------- scroll to explode ----------
+    function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+    function smooth(x) { return x * x * (3 - 2 * x); }
+    function progress() {
+      var max = document.documentElement.scrollHeight - window.innerHeight;
+      return max > 0 ? clamp01(window.scrollY / max) : 0;
+    }
+    var lastP = -1;
+    function applyExplode(p) {
+      for (var i = 0; i < parts.length; i++) {
+        var q = parts[i];
+        var k = STAGE_INDEX[q.group], s = k / STAGES, e = (k + 1) / STAGES;
+        var t = (p - s) / (e - s);
+        var d = q.delay * 0.4;
+        t = smooth(clamp01((t - d) / (1 - d)));
+        var after = e < 1 ? clamp01((p - e) / (1 - e)) : 0;
+        q.obj.position.copy(q.home).addScaledVector(q.ex, t * (1 + 0.3 * after));
+      }
+      var glow = smooth(clamp01((p - 0.78) / 0.22));
+      M.boron.emissiveIntensity = 0.5 * glow;
+      M.ehss.emissiveIntensity = 0.4 * glow;
+      M.hss.emissiveIntensity = 0.35 * glow;
+    }
+
+    var section = -1;
+    function setSection(s) {
+      if (s === section) return;
+      section = s;
+      stageBtns.forEach(function (b, i) { b.setAttribute('aria-current', i === s ? 'true' : 'false'); });
+      cards.forEach(function (c, i) { c.classList.toggle('on', i === s); });
+      Object.keys(tagEls).forEach(function (key) {
+        var on = tagEls[key].el.dataset.sec === String(s);
+        tagEls[key].el.classList.toggle('on', on);
+      });
+    }
+
+    // ---------- camera and orbit ----------
+    var view = { theta: 0.65, phi: 1.15, radius: 7.6 };
+    var baseRadius = 7.6;
+    var userTouched = false, userZoomed = false, auto = !reduced, free = false;
+    var lastInteract = -1e9;
+    var ptrs = new Map();
+    var lastPinch = 0;
+    function interact() { lastInteract = performance.now(); }
+
+    canvas.addEventListener('pointerdown', function (e) {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      canvas.setPointerCapture(e.pointerId);
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      canvas.classList.add('dragging');
+      interact();
+    });
+    canvas.addEventListener('pointermove', function (e) {
+      if (!ptrs.has(e.pointerId)) return;
+      var prev = ptrs.get(e.pointerId);
+      var dx = e.clientX - prev.x, dy = e.clientY - prev.y;
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (ptrs.size === 1) {
+        view.theta -= dx * 0.006;
+        view.phi = Math.min(Math.PI - 0.03, Math.max(0.03, view.phi - dy * 0.006));
+        userTouched = true;
+      } else if (ptrs.size === 2) {
+        var pts = Array.from(ptrs.values());
+        var dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        if (lastPinch > 0 && dist > 0) {
+          view.radius = Math.min(18, Math.max(3.5, view.radius * lastPinch / dist));
+          userZoomed = true;
+        }
+        lastPinch = dist;
+        view.theta -= dx * 0.003;
+        view.phi = Math.min(Math.PI - 0.03, Math.max(0.03, view.phi - dy * 0.003));
+        userTouched = true;
+      }
+      interact();
+    });
+    function endPointer(e) {
+      ptrs.delete(e.pointerId);
+      if (ptrs.size < 2) lastPinch = 0;
+      if (ptrs.size === 0) canvas.classList.remove('dragging');
+      interact();
+    }
+    canvas.addEventListener('pointerup', endPointer);
+    canvas.addEventListener('pointercancel', endPointer);
+    canvas.addEventListener('lostpointercapture', endPointer);
+
+    document.getElementById('zoomIn').addEventListener('click', function () { view.radius = Math.max(3.5, view.radius * 0.85); userZoomed = true; interact(); });
+    document.getElementById('zoomOut').addEventListener('click', function () { view.radius = Math.min(18, view.radius * 1.18); userZoomed = true; interact(); });
+    document.getElementById('resetBtn').addEventListener('click', function () {
+      view.theta = 0.65; view.phi = SECTION_PHI[Math.max(0, section)]; view.radius = baseRadius * SECTION_R[Math.max(0, section)];
+      userTouched = false; userZoomed = false; interact();
+    });
+    var spinBtn = document.getElementById('spinBtn');
+    spinBtn.setAttribute('aria-pressed', auto ? 'true' : 'false');
+    spinBtn.addEventListener('click', function () { auto = !auto; spinBtn.setAttribute('aria-pressed', auto ? 'true' : 'false'); lastInteract = -1e9; });
+    var orbitBtn = document.getElementById('orbitBtn');
+    orbitBtn.addEventListener('click', function () { free = !free; orbitBtn.setAttribute('aria-pressed', free ? 'true' : 'false'); canvas.classList.toggle('free', free); });
+    stageBtns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        var max = document.documentElement.scrollHeight - window.innerHeight;
+        window.scrollTo({ top: max * (Number(b.dataset.go) / STAGES), behavior: reduced ? 'auto' : 'smooth' });
+      });
+    });
+
+    // ---------- theme ----------
+    var themeDark = false;
+    function applyTheme() {
+      var cs = getComputedStyle(document.documentElement);
+      var bg = cs.getPropertyValue('--canvas-bg').trim() || '#d9d3ce';
+      var c = new T.Color(bg);
+      themeDark = (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) < 0.4;
+      renderer.setClearColor(c, 1);
+      if (envTex) envTex.dispose();
+      envTex = makeEnv(themeDark);
+      scene.environment = envTex;
+      groundMat.opacity = themeDark ? 0.3 : 0.26;
+      hemi.intensity = themeDark ? 0.3 : 0.5;
+      key.intensity = themeDark ? 1.3 : 1.1;
+    }
+    applyTheme();
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    if (mq.addEventListener) mq.addEventListener('change', applyTheme); else if (mq.addListener) mq.addListener(applyTheme);
+    new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+    // ---------- resize ----------
+    function resize() {
+      var w = window.innerWidth, h = window.innerHeight;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      if (w >= 900) camera.setViewOffset(w, h, -w * 0.14, 0, w, h); else camera.clearViewOffset();
+      camera.updateProjectionMatrix();
+      var aspect = w / h;
+      baseRadius = aspect < 1.25 ? Math.min(14, 7.6 * (1.25 / aspect)) : 7.6;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // ---------- frame loop ----------
+    var tmp = new T.Vector3();
+    var paused = false;
+    document.addEventListener('visibilitychange', function () { paused = document.hidden; });
+    var last = performance.now();
+    function frame(now) {
+      requestAnimationFrame(frame);
+      if (paused) return;
+      var dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+
+      var p = progress();
+      if (p !== lastP) { applyExplode(p); lastP = p; progressEl.style.transform = 'scaleX(' + p + ')'; }
+      var s = Math.max(0, Math.min(STAGES, Math.round(p * STAGES)));
+      setSection(s);
+
+      if (auto && !reduced && now - lastInteract > 2500) view.theta += dt * 0.12;
+      if (!userTouched) view.phi += (SECTION_PHI[s] - view.phi) * Math.min(1, dt * 2);
+      if (!userZoomed) view.radius += (baseRadius * SECTION_R[s] - view.radius) * Math.min(1, dt * 2);
+
+      var sp = Math.sin(view.phi);
+      camera.position.set(
+        target.x + view.radius * sp * Math.sin(view.theta),
+        target.y + view.radius * Math.cos(view.phi),
+        target.z + view.radius * sp * Math.cos(view.theta)
+      );
+      camera.lookAt(target);
+
+      var w = window.innerWidth, h = window.innerHeight;
+      Object.keys(tagEls).forEach(function (key) {
+        var t = tagEls[key];
+        if (!t.part || t.el.dataset.sec !== String(s)) return;
+        t.part.obj.getWorldPosition(tmp);
+        tmp.y += 0.12;
+        tmp.project(camera);
+        var vis = tmp.z < 1 && tmp.x > -1.05 && tmp.x < 1.05 && tmp.y > -1.05 && tmp.y < 1.05;
+        t.el.style.visibility = vis ? 'visible' : 'hidden';
+        if (vis) t.el.style.transform = 'translate(' + ((tmp.x * 0.5 + 0.5) * w).toFixed(1) + 'px,' + ((-tmp.y * 0.5 + 0.5) * h).toFixed(1) + 'px) translate(-50%, calc(-100% - 10px))';
+      });
+
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  window.__k24boot = boot;
+  if (window.THREE) boot();
+})();
+</script>
+</body>
+</html>
