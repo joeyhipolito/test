@@ -146,7 +146,7 @@ class Shape {
 // Build a pressure ribbon Path2D around a flattened polyline.
 // opts: w (base width), heavy (extra weight on undersides 0..1), jitter (px), seed, taper ('none'|'both'|'start'|'end'), wobble (width noise 0..1)
 function ribbon(fl, opts = {}) {
-  const { w = 3, heavy = .5, jitter = .6, seed = 1, taper = 'none', wobble = .25, out = .55 } = opts;
+  const { w = 3, heavy = .5, jitter = .6, seed = 1, taper = 'none', wobble = .12, out = .55 } = opts;
   const pts = fl.pts, n = pts.length, L = fl.length || 1;
   const outer = [], inner = [];
   for (let i = 0; i < n; i++) {
@@ -171,6 +171,7 @@ function ribbon(fl, opts = {}) {
 }
 // memo for geometry built from stable keys
 const MEMO = new Map();
+let CUR_PAL = null;   // palette of the creature being drawn, lets part shadows share its hue
 function memo(key, build) { let v = MEMO.get(key); if (v === undefined) { v = build(); MEMO.set(key, v); } return v; }
 
 // ink an outline: fill a ribbon in colour
@@ -203,9 +204,10 @@ function crescent(ctx, clipPath, cx, cy, r, color, a = 1, ox = -.18, oy = -.22, 
 // Axie-style layered shading inside a clip: soft crescent, a harder core shadow a little further in,
 // a thin rim light on the lit side and (optionally) a crisp highlight patch with a soft glow.
 function shading(ctx, clip, cx, cy, r, o = {}) {
-  const { shade, deep, light = '#ffffff', ox = -.18, oy = -.28, inner = .64, soft = .14, coreA = .5, rimA = .28, hi = null, hiA = .32 } = o;
-  if (shade) crescent(ctx, clip, cx, cy, r, shade, 1, ox, oy, inner, soft);
-  if (deep) crescent(ctx, clip, cx, cy, r, deep, coreA, ox * 1.1, oy * 1.1, Math.min(.97, inner + .14), .035);
+  let { shade, deep, light = '#ffffff', ox = -.18, oy = -.28, inner = .64, soft = .14, coreA = .5, rimA = .28, hi = null, hiA = .32 } = o;
+  if (CUR_PAL) { if (shade) shade = mix(shade, CUR_PAL.shade, .16); if (deep) deep = mix(deep, CUR_PAL.shade, .16); }
+  if (shade) crescent(ctx, clip, cx, cy, r, shade, 1, ox, oy, inner, soft * 1.3);
+  if (deep) crescent(ctx, clip, cx, cy, r, deep, coreA * .75, ox * 1.1, oy * 1.1, Math.min(.97, inner + .14), .09);
   if (rimA > 0) crescent(ctx, clip, cx, cy, r, light, rimA, -ox * 1.2, -oy * 1.1, .9, .05);
   if (hi) { const [hx, hy, hrx, hry, hrot = -.55] = hi; ctx.save(); ctx.clip(clip); softEllipse(ctx, hx, hy, hrx * 1.8, hry * 1.9, light, hiA * .45, .3, hrot); ctx.fillStyle = alpha(light, hiA); ctx.beginPath(); ctx.ellipse(hx, hy, hrx, hry, hrot, 0, TAU); ctx.fill(); ctx.restore(); }
 }
@@ -254,9 +256,10 @@ function bodyPoint(th, edge, seed) {
   const c = Math.cos(th), s = Math.sin(th), n = 2.45;
   let x = Math.sign(c) * Math.pow(Math.abs(c), 2 / n);
   let y = Math.sign(s) * Math.pow(Math.abs(s), 2 / n);
-  const yy = y > 0 ? y * .9 : y * (1.02 + .035 * Math.max(0, -x));   // flatter, heavier bottom; head end a touch taller
+  let yy = y > 0 ? y * .9 : y * (1.03 + .04 * Math.max(0, -x));   // flatter, heavier bottom; head end a touch taller
+  yy *= 1 - .07 * (x + 1) / 2;                                         // egg: the rear sits a little lower than the head
   const xx = x * (1 + .07 * Math.max(0, y)) * (1 + .03 * Math.max(0, -y) * (1 - Math.abs(x))); // a little wider low down
-  let r = 1 + .012 * fbm(seed, th * 1.9 + 7, 2);           // hand-drawn irregularity
+  let r = 1 + .007 * fbm(seed, th * 1.9 + 7, 2);           // hand-drawn irregularity, kept subtle so the line stays confident
   if (edge === 'wool') r += .046 * Math.pow(Math.abs(Math.sin(th * 5 + .6)), .65) - .015;
   return { x: BODY.rx * xx * r, y: BODY.ry * yy * r };
 }
@@ -287,14 +290,14 @@ function makeAnchors() {
   const rear = surface(0.18);         // rear, just under the midline
   const headSide = { x: -4, y: -54, nx: -.12, ny: -.99, ang: -1.69, lean: -0.12 };   // on the near side of the head
   const headSideFar = { x: 20, y: -66, nx: .22, ny: -.97, ang: -1.35, lean: 0.22 };
-  const face = { x: -36, y: -4, eyeF: { x: -63, y: -14 }, eyeB: { x: -13, y: -11 }, mouth: { x: -46, y: 21 }, cheekF: { x: -78, y: 9 }, cheekB: { x: -2, y: 13 }, eyeR: 11 };
-  const legs = [{ x: -48, y: 72, far: false }, { x: -2, y: 66, far: true }, { x: 38, y: 73, far: false }];
+  const face = { x: -36, y: -4, eyeF: { x: -64, y: -15 }, eyeB: { x: -17, y: -12 }, mouth: { x: -46, y: 21 }, cheekF: { x: -79, y: 9 }, cheekB: { x: -4, y: 13 }, eyeR: 12.5 };
+  const legs = [{ x: -54, y: 70, far: false }, { x: -6, y: 66, far: true }, { x: 40, y: 70, far: false }];
   return { horn, topRear, rear, headSide, headSideFar, face, legs, spot: { x: 50, y: 10 }, ground: { x: 0, y: 84 } };
 }
 
 /* ---------- body painter ---------- */
 function drawLeg(ctx, leg, pal, body) {
-  const w = leg.far ? 18 : 20, h = leg.far ? 17 : 19, x = leg.x, y = leg.y;
+  const w = leg.far ? 18 : 21, h = leg.far ? 14 : 15, x = leg.x, y = leg.y;
   const base = leg.far ? shadeOf(pal.shade, .12) : pal.body, shade = leg.far ? shadeOf(pal.shade, .3) : pal.shade;
   const s = new Shape().M(x - w / 2, y - 8).C(x - w / 2 - 1, y + h * .5, x - w / 2 - 2, y + h, x - w / 2 + 3, y + h + 1)
     .C(x - 1, y + h + 3.5, x + 1, y + h + 3.5, x + w / 2 - 3, y + h + 1).C(x + w / 2 + 2, y + h, x + w / 2 + 1, y + h * .5, x + w / 2, y - 8);
@@ -303,7 +306,7 @@ function drawLeg(ctx, leg, pal, body) {
   const clip = new Path2D(p); clip.closePath();
   shading(ctx, clip, x, y + h * .4, h * 1.1, { shade, deep: mix(shade, pal.ink, .2), ox: -.25, oy: -.45, inner: .6, soft: .16, coreA: .4, rimA: .18 });
   if (!leg.far) { ctx.save(); ctx.clip(clip); ctx.globalCompositeOperation = 'multiply'; softEllipse(ctx, x, y - 6, w * .8, 7, pal.shade, .5, .5); ctx.restore(); }
-  ink(ctx, s, pal.inkBody, { w: 3.3, heavy: .6, jitter: .4, seed: 31 + x, taper: leg.far ? 'none' : 'both', step: 1.6 });
+  ink(ctx, s, pal.inkBody, { w: 3.6, heavy: .45, jitter: .25, seed: 31 + x, taper: leg.far ? 'none' : 'both', step: 1.6 });
 }
 function drawBody(ctx, genome, pal, anchors, seats, pose) {
   const edge = genome.bodyEdge, seed = genome.seed;
@@ -312,9 +315,12 @@ function drawBody(ctx, genome, pal, anchors, seats, pose) {
   // base
   ctx.fillStyle = pal.body; ctx.fill(clip);
   // matte two-tone: soft shade crescent on the bottom third, plus a faint top-light gradient
-  shading(ctx, clip, 0, 0, 100, { shade: pal.shade, deep: mix(pal.shade, pal.ink, .2), ox: -.12, oy: -.3, inner: .76, soft: .08, coreA: .38, rimA: .2, hi: [-48, -52, 11, 4.5, -.45], hiA: .09 });
-  ctx.save(); ctx.clip(clip); const g = ctx.createLinearGradient(0, -84, 0, 84); g.addColorStop(0, 'rgba(255,255,255,.10)'); g.addColorStop(.5, 'rgba(255,255,255,0)'); g.addColorStop(1, alpha(pal.shade, .18)); ctx.fillStyle = g; ctx.fillRect(-120, -100, 240, 200); ctx.restore();
-  sheen(ctx, clip, -40, -44, 38, 20, .12, -.35);
+  const shadeSat = adjust(pal.shade, -.02, .1);
+  ctx.save(); ctx.clip(clip); softEllipse(ctx, -52, -34, 70, 58, '#ffffff', .13, .75, -.3); ctx.restore();   // soft light on the top-front
+  crescent(ctx, clip, 0, 0, 100, shadeSat, 1, -.35, -.3, .68, .12);                       // airbrushed shade over the rear half and belly
+  crescent(ctx, clip, 0, 0, 100, mix(shadeSat, pal.ink, .18), .45, -.3, -.3, .88, .08);  // deeper band right at the underside
+  crescent(ctx, clip, 0, 0, 100, '#ffffff', .1, .32, .42, .9, .08);                       // thin rim light on the lit side
+  sheen(ctx, clip, -44, -48, 30, 14, .09, -.35);
   // tama spot: a small matte pearl on the rear flank
   const sp = anchors.spot;
   const pearl = new Path2D(); pearl.arc(sp.x, sp.y, 7, 0, TAU);
@@ -326,16 +332,16 @@ function drawBody(ctx, genome, pal, anchors, seats, pose) {
   for (const s of seats) cast(ctx, clip, s.x, s.y, s.rx * .9, s.ry * .8, pal.shade, s.a * 1.1, s.rot);
   // edge texture
   if (edge === 'fuzzy') {
-    ctx.fillStyle = alpha(pal.shade, .9); ctx.fill(memo('fzin:' + seed, () => flickPath(sil, { seed: seed + 11, spacing: 3.2, len: 4.5, inset: 5.5, lean: .5, w: 1.3, side: 1 })));
-    ctx.fillStyle = pal.inkBody; ctx.fill(memo('fzout:' + seed, () => flickPath(sil, { seed: seed + 12, spacing: 2.3, len: 5.5, inset: 1.6, lean: .55, w: 1.55 })));
-    ink(ctx, sil, pal.inkBody, { w: 3.2, heavy: .75, jitter: .9, seed, key: 'bodyink-f' + seed, wobble: .35 });
+    ctx.fillStyle = alpha(pal.shade, .9); ctx.fill(memo('fzin:' + seed, () => flickPath(sil, { seed: seed + 11, spacing: 4.2, len: 4, inset: 5.5, lean: .5, w: 1.2, side: 1 })));
+    ctx.fillStyle = pal.inkBody; ctx.fill(memo('fzout:' + seed, () => flickPath(sil, { seed: seed + 12, spacing: 2.9, len: 4.6, inset: 1.8, lean: .5, w: 1.45 })));
+    ink(ctx, sil, pal.inkBody, { w: 3.5, heavy: .5, jitter: .6, seed, key: 'bodyink-f' + seed, wobble: .25 });
   } else if (edge === 'wool') {
-    ink(ctx, sil, pal.inkBody, { w: 3.7, heavy: .55, jitter: .4, seed, key: 'bodyink-w' + seed, wobble: .25 });
+    ink(ctx, sil, pal.inkBody, { w: 3.9, heavy: .45, jitter: .3, seed, key: 'bodyink-w' + seed, wobble: .15 });
     // little curls just inside the bumps
     ctx.fillStyle = alpha(pal.inkBody, .5);
     ctx.fill(memo('wool:' + seed, () => { const p = new Path2D(); const r = rng(seed + 9); const pts = sil.pts; for (let i = 0; i < pts.length; i += 9) { const q = pts[i]; if (r() < .35) continue; const d = 6 + r() * 3; const cx = q.x - q.nx * d, cy = q.y - q.ny * d; const rr = 2.2 + r() * 1.4; const a0 = Math.atan2(q.ny, q.nx) + .9; p.moveTo(cx + Math.cos(a0) * rr, cy + Math.sin(a0) * rr); p.arc(cx, cy, rr, a0, a0 + 3.6); p.arc(cx, cy, rr - .9, a0 + 3.6, a0, true); p.closePath(); } return p; }));
   } else {
-    ink(ctx, sil, pal.inkBody, { w: 4.1, heavy: .7, jitter: .5, seed, key: 'bodyink-s' + seed });
+    ink(ctx, sil, pal.inkBody, { w: 4.2, heavy: .45, jitter: .3, seed, key: 'bodyink-s' + seed, wobble: .1 });
   }
   return clip;
 }
@@ -485,7 +491,7 @@ drawEars.calyxLeaf = part({ seat: { rx: 15, ry: 6, a: .35 }, both: true }, (ctx,
     brush(ctx, new Shape().M(0, 1).C(-2, -14, -1, -30, 2, -42), vein, 2, { taper: 'end', jitter: .2 });
     for (let i = 0; i < 3; i++) { const y = -10 - i * 10; brush(ctx, new Shape().M(-1, y).C(-5, y - 3, -8, y - 6, -10, y - 10), alpha(vein, .7), 1.2, { taper: 'end' }); brush(ctx, new Shape().M(1, y - 2).C(5, y - 5, 8, y - 8, 10, y - 12), alpha(vein, .7), 1.2, { taper: 'end' }); }
     brush(ctx, new Shape().M(-4, -36).C(-3, -39, -1, -42, 1, -43), 'rgba(255,255,255,.55)', 1.6);
-    ink(ctx, leaf, far ? pal.ink : inkFor(g, pal.ink), { w: 2.8, heavy: .4, jitter: .4, seed: 41, taper: 'both', step: 1.8 });
+    ink(ctx, leaf, far ? pal.ink : inkFor(g, pal.ink), { w: 3.1, heavy: .35, jitter: .3, seed: 41, taper: 'both', step: 1.8 });
   });
 });
 drawEars.daifuku = part({ seat: { rx: 17, ry: 6, a: .4 }, both: true }, (ctx, a, pal, t) => {
@@ -500,7 +506,7 @@ drawEars.daifuku = part({ seat: { rx: 17, ry: 6, a: .4 }, both: true }, (ctx, a,
     // powder dusting
     scatter(ctx, clip, [-16, -33, 16, 2], 77, 26, (x, y, r) => { ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.beginPath(); ctx.arc(x, y, .6 + r() * .8, 0, TAU); ctx.fill(); });
     ctx.save(); ctx.clip(clip); ctx.globalCompositeOperation = 'multiply'; softEllipse(ctx, 0, 2, 16, 6, shade, .6, .5); ctx.restore();
-    ink(ctx, ear, far ? pal.ink : inkFor('#c9a88a', pal.ink), { w: 2.9, heavy: .5, jitter: .5, seed: 43, taper: 'both', step: 1.8 });
+    ink(ctx, ear, far ? pal.ink : inkFor('#c9a88a', pal.ink), { w: 3.1, heavy: .4, jitter: .3, seed: 43, taper: 'both', step: 1.8 });
     brush(ctx, new Shape().M(-7, -4).C(-5, -9, -2, -13, 3, -16), alpha(inkFor('#c9a88a', pal.ink), .5), 1.4);
   });
 });
@@ -515,7 +521,7 @@ drawEars.ginkgo = part({ seat: { rx: 10, ry: 5, a: .35 }, both: true }, (ctx, a,
     const vcol = alpha(y3, .85);
     for (let i = 0; i < 9; i++) { const u = (i + .5) / 9; const ex = lerp(-21, 21, u), ey = -34 - 6 * Math.sin(u * Math.PI); brush(ctx, new Shape().M(0, 0).C(ex * .3, -12, ex * .6, -24, ex, ey), vcol, 1.3, { taper: 'end', jitter: .15 }); }
     brush(ctx, new Shape().M(0, 2).L(0, 9), '#7a5230', 2.6, { taper: 'end' });
-    ink(ctx, fan, far ? pal.ink : inkFor(y3, pal.ink), { w: 2.6, heavy: .4, jitter: .5, seed: 47, taper: 'both', step: 1.8 });
+    ink(ctx, fan, far ? pal.ink : inkFor(y3, pal.ink), { w: 3, heavy: .35, jitter: .3, seed: 47, taper: 'both', step: 1.8 });
   });
 });
 
@@ -535,7 +541,7 @@ drawHorn.persimmon = part({ seat: { rx: 24, ry: 8, a: .5 } }, (ctx, a, pal, t) =
     // lobe creases running down from the calyx
     for (const [x, c] of [[-13, .55], [12, .55], [0, .75]]) brush(ctx, new Shape().M(x * .35, -35).C(x * .8, -28, x * 1.05, -18, x * 1.0, -6), alpha(odeep, c), 1.7, { taper: 'both', jitter: .3 });
     brush(ctx, new Shape().M(-19, -24).C(-17, -31, -12, -35, -5, -36.5), olit, 2.6);
-    ink(ctx, fruit, inkFor(o, pal.ink), { w: 3, heavy: .55, jitter: .5, seed: 51, step: 1.8 });
+    ink(ctx, fruit, inkFor(o, pal.ink), { w: 3.2, heavy: .4, jitter: .3, seed: 51, step: 1.8 });
     // calyx: four sepals
     const g = '#6b9a3f', gd = '#476c28', gl = '#93bf62';
     for (const ang of [-.9, .3, 2.2, 3.6]) {
@@ -563,7 +569,7 @@ drawHorn.leek = part({ seat: { rx: 12, ry: 6, a: .45 } }, (ctx, a, pal, t) => {
     crescent(ctx, clip, 0, -16, 26, alpha('#b9c99a', 1), .8, -.3, -.1, .64, .2);
     for (let i = 0; i < 6; i++) { const x = -7.5 + i * 3; brush(ctx, new Shape().M(x, 3).C(x - .5, -10, x + .5, -22, x * .6, -34), alpha('#9fb57e', .55), .9, { taper: 'both' }); }
     sheen(ctx, clip, -4, -16, 2.5, 14, .35, 0);
-    ink(ctx, stalk, inkc, { w: 2.7, heavy: .3, jitter: .4, seed: 61, taper: 'both', step: 1.6 });
+    ink(ctx, stalk, inkc, { w: 3, heavy: .3, jitter: .3, seed: 61, taper: 'both', step: 1.6 });
     // leaves: two blades fanning from the top
     const blades = [[-1, -38, -16 + sway * 14, -70, -8 + sway * 10, -80, 1], [3, -38, 20 + sway * 16, -66, 24 + sway * 16, -74, -1], [1, -40, 2 + sway * 14, -80, 5 + sway * 16, -92, 0]];
     for (const [x0, y0, cx1, cy1, tx, ty, side] of blades) {
@@ -601,7 +607,7 @@ drawHorn.chochin = part({ seat: { rx: 9, ry: 5, a: .45 }, animated: true }, (ctx
     sheen(ctx, bc, -6, 16, 4, 9, .3, 0); brush(ctx, new Shape().M(-8, 14).C(-8, 18, -7, 24, -6, 28), rlit, 2);
     ctx.fillStyle = '#fff5e0'; ctx.beginPath(); ctx.arc(0, 22, 4.6, 0, TAU); ctx.fill();
     brush(ctx, new Shape().M(-2.2, 20).C(-2.6, 23.5, .5, 25.5, 2.4, 23).C(3, 21.5, 1.5, 19.6, -.6, 19.6), '#c9341f', 1.3, { taper: 'end' });
-    ink(ctx, body, inkFor(red, pal.ink), { w: 2.6, heavy: .45, jitter: .35, seed: 73, step: 1.5 });
+    ink(ctx, body, inkFor(red, pal.ink), { w: 2.9, heavy: .4, jitter: .25, seed: 73, step: 1.5 });
     for (const y of [8, 36]) { const ring = new Shape().M(-7.5, y - 1.5).C(-5, y - 2.5, 5, y - 2.5, 7.5, y - 1.5).C(5, y + 1.5, -5, y + 1.5, -7.5, y - 1.5); ctx.fillStyle = pal.ink; ctx.fill(ring.path()); }
     for (const dx of [-1.6, 0, 1.6]) brush(ctx, new Shape().M(dx * .4, 38).C(dx * .8, 42, dx, 45, dx * 1.4, 49), '#d9a63c', 1.5, { taper: 'end' });
     ctx.fillStyle = '#b8862a'; ctx.beginPath(); ctx.ellipse(0, 39, 2.6, 1.6, 0, 0, TAU); ctx.fill();
@@ -620,19 +626,12 @@ drawBack.kagamiMochi = part({ seat: { rx: 30, ry: 9, a: .45 }, behind: true }, (
       ctx.fillStyle = w; ctx.fill(c);
       shading(ctx, c, cx, cy - ry * .2, rx * 1.05, { shade: wsh, deep: wdeep, ox: -.15, oy: -.35, inner: .58, soft: .22, coreA: .4, rimA: .35, hi: [cx - rx * .4, cy - ry * .85, rx * .22, ry * .25, -.3], hiA: .55 });
       scatter(ctx, c, [cx - rx, cy - ry * 1.5, cx + rx, cy + ry], seed, 16, (x, y, r) => { ctx.fillStyle = alpha('#ffffff', .35 + r() * .3); ctx.beginPath(); ctx.arc(x, y, .4 + r() * .5, 0, TAU); ctx.fill(); });
-      ink(ctx, s, inkw, { w: 2.8, heavy: .55, jitter: .5, seed, step: 1.8 });
+      ink(ctx, s, inkw, { w: 3.1, heavy: .4, jitter: .3, seed, step: 1.8 });
       return c;
     };
     const d1 = disc(0, -8, 31, 11, 81);
     cast(ctx, d1, 2, -18, 21, 6, wdeep, .55);
     disc(1, -27, 22, 9, 82);
-    // shide: the zigzag paper strip hanging down the front
-    const L = [[-9, -23], [-15, -18], [-9, -13], [-15, -8], [-9, -3]];
-    const zz = new Shape().M(L[0][0], L[0][1]); for (let i = 1; i < L.length; i++) zz.L(L[i][0], L[i][1]);
-    for (let i = L.length - 1; i >= 0; i--) zz.L(L[i][0] + 6, L[i][1] + (i === L.length - 1 ? 2.5 : 0)); zz.Z();
-    const zp = zz.path(); ctx.fillStyle = '#ffffff'; ctx.fill(zp);
-    ctx.save(); ctx.clip(zp); ctx.fillStyle = alpha(wsh, .8); ctx.fillRect(-20, -18, 16, 5); ctx.fillRect(-20, -8, 16, 5.5); ctx.restore();
-    ink(ctx, zz, inkw, { w: 1.5, heavy: .2, jitter: .1, seed: 86, step: 1.2, wobble: .1 });
     // the daidai on top
     const oc = '#f3a234', osh = '#d4801c';
     const orange = Shape.ellipse(2, -47, 9.5, 8.5);
@@ -658,7 +657,7 @@ drawBack.onigiri = part({ seat: { rx: 28, ry: 9, a: .45 }, behind: true }, (ctx,
     const np = nori.path(); const nc = new Path2D(np); nc.closePath();
     ctx.fillStyle = '#243122'; ctx.fill(nc);
     ctx.save(); ctx.clip(nc); ctx.fillStyle = 'rgba(120,150,90,.25)'; for (let i = 0; i < 6; i++) { ctx.fillRect(-32, -16 + i * 4.2, 64, 1.1); } softEllipse(ctx, -12, -8, 10, 5, '#6f8f55', .35, .5); ctx.restore();
-    ink(ctx, tri, inkr, { w: 2.8, heavy: .5, jitter: .5, seed: 92, step: 1.8 });
+    ink(ctx, tri, inkr, { w: 3.1, heavy: .4, jitter: .3, seed: 92, step: 1.8 });
     ink(ctx, nori, inkFor('#243122', pal.ink), { w: 2.2, heavy: .3, jitter: .4, seed: 93, step: 1.8 });
   });
 });
@@ -828,7 +827,7 @@ function triggerSneeze() { if (sneeze.active) return; sneeze.active = true; snee
 function frame(now) {
   const f0 = performance.now();
   const t = now / 1000; const dt = clamp((now - lastTime) / 1000, 0, .05); lastTime = now;
-  const pal = expandPalette(genome.palette);
+  const pal = expandPalette(genome.palette); CUR_PAL = pal;
   const anchors = makeAnchors();
   // ----- idle: breathing, blink
   let sy = 1, sx = 1, rot = 0, squint = 0, tight = false, mouthOverride = null;
@@ -864,7 +863,7 @@ function frame(now) {
   ctx.scale(k, k);
   // paper + ground shadow
   const gsq = 1 + (sx - 1) * .6;
-  ctx.save(); ctx.translate(VIEW.cx, VIEW.cy + 84 * VIEW.scale + 6); ctx.scale(gsq, 1); softEllipse(ctx, 0, 0, 150 * VIEW.scale * .95, 14 * VIEW.scale, '#5a3b2a', .16, .35); ctx.restore();
+  ctx.save(); ctx.translate(VIEW.cx, VIEW.cy + 84 * VIEW.scale + 6); ctx.scale(gsq, 1); softEllipse(ctx, 0, 0, 150 * VIEW.scale * .9, 13 * VIEW.scale, '#4a2e20', .24, .3); ctx.restore();
   ctx.translate(VIEW.cx, VIEW.cy); ctx.scale(VIEW.scale, VIEW.scale);
   // squash and stretch around the ground contact, tilt around the same point
   ctx.translate(0, 84); ctx.rotate(rot); ctx.scale(sx, sy); ctx.translate(0, -84);
@@ -891,6 +890,8 @@ function frame(now) {
   parts.eyes(ctx, anchors, pal, t);
   if (mouthOverride) openMouth(ctx, pal, anchors.face.mouth.x - 1, anchors.face.mouth.y + 1, mouthOverride.w, mouthOverride.h, mouthOverride.h > 3.5);
   else parts.mouth(ctx, anchors, pal, t);
+  // a faint glaze of the body colour over everything drawn so far ties the parts to the palette
+  ctx.save(); ctx.globalCompositeOperation = 'source-atop'; ctx.fillStyle = alpha(pal.body, .035); ctx.fillRect(-400, -400, 800, 800); ctx.restore();
   // sneeze stars (drawn in body space so they ride the squash a little, then settle)
   for (let i = sneeze.stars.length - 1; i >= 0; i--) {
     const s = sneeze.stars[i]; s.age += dt; if (s.age > s.life) { sneeze.stars.splice(i, 1); continue; }
